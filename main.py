@@ -36,37 +36,40 @@ import logging
 import paho.mqtt.client as mqtt
 
 logging.basicConfig()
-log = logging.getLogger()
+log = logging.getLogger("modbus")
 log.setLevel(logging.DEBUG)
+
+mqtt_log = logging.getLogger("mqtt")
+mqtt_log.setLevel(logging.INFO)
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
-    print("Connected with result code "+str(rc))
+    mqtt_log.info("Connected with result code "+str(rc))
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe("$SYS/#")
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, msg):
-    #print(msg.topic+" "+str(msg.payload))
+    mqtt_log.debug("received: " + msg.topic + " " + str(msg.payload))
     pass
 
 power = 0
 
 def on_set_power_message(client, userdata, msg: mqtt.MQTTMessage):
+    mqtt_log.debug("received: " + msg.topic + " " + str(msg.payload))
     cmd = msg.topic.split("/").pop()
     data = str(msg.payload.decode())
 
     global power
     power = int(data)
-
-    print(msg.topic+" "+str(msg.payload))
+    mqtt_log.info("received power: " + str(power) + " W")
 
 client = mqtt.Client()
 client.on_connect = on_connect
 client.on_message = on_message
 
-client.connect("mqtt", 1883, 60)
+client.connect("192.168.2.102", 1883, 60)
 
 client.subscribe("vito_energy/set/+")
 client.message_callback_add("vito_energy/set/power", on_set_power_message)
@@ -90,7 +93,7 @@ def updating_writer(a):
     register = 3
     slave_id = 0x00
     values = [int(power/10/3)]
-    log.debug("new values: " + str(values))
+    log.debug("new power value: " + str(values[0]) + " * 3 * 10 W")
     context[slave_id].setValues(register, 37, values)
     context[slave_id].setValues(register, 42, values)
     context[slave_id].setValues(register, 47, values)
@@ -100,21 +103,11 @@ def updating_writer(a):
     client.publish("vito_energy/get/47", values[0])
 
 
-tab_registers = [0] * 48
+tab_registers = [0] * 53
 tab_registers[0] = 10; #Firmware
-tab_registers[21] = 0; #Comm ok
-tab_registers[24] = 0; #Metering ok
-tab_registers[27] = 0; #Counter 1 Total high (in 10 Wh)
-tab_registers[28] = 0; #Counter 1 Total low (in 10 Wh)
-tab_registers[29] = 0; #Counter 1 Partial high (in 10 Wh)
-tab_registers[30] = 0; #Counter 1 Partial low (in 10 Wh)
-tab_registers[31] = 0; #Counter 2 Total high (in 10 Wh)
-tab_registers[32] = 0; #Counter 2 Total low (in 10 Wh)
-tab_registers[33] = 0; #Counter 2 Partial high (in 10 Wh)
-tab_registers[34] = 0; #Counter 2 Partial low (in 10 Wh)
-tab_registers[37] = 0; #Power Phase 1 (in 10W)
-tab_registers[42] = 0; #Power Phase 2 (in 10W)
-tab_registers[47] = 0; #Power Phase 3 (in 10W)
+tab_registers[37] = 100; #Power Phase 1 (in 10W)
+tab_registers[42] = 100; #Power Phase 2 (in 10W)
+tab_registers[47] = 100; #Power Phase 3 (in 10W)
 
 def run_updating_server():
     # ----------------------------------------------------------------------- #
@@ -122,7 +115,7 @@ def run_updating_server():
     # ----------------------------------------------------------------------- #
 
     store = ModbusSlaveContext(
-        hr=ModbusSequentialDataBlock(0, tab_registers))
+        hr=ModbusSequentialDataBlock(1, tab_registers))
     context = ModbusServerContext(slaves=store, single=True)
 
     # ----------------------------------------------------------------------- #
@@ -139,14 +132,14 @@ def run_updating_server():
     # ----------------------------------------------------------------------- #
     # run the server you want
     # ----------------------------------------------------------------------- #
-    time = 5  # 5 seconds delay
+    time = 1  # 5 seconds delay
     loop = LoopingCall(f=updating_writer, a=(context,))
     loop.start(time, now=False)  # initially delay by time
 
     #StartTcpServer(context, identity=identity, address=("localhost", 5020))
 
     StartSerialServer(context, identity=identity,
-                      port='/dev/ttyp0', framer=ModbusRtuFramer)
+                      port='/dev/rs485', framer=ModbusRtuFramer, baudrate=19200)
 
 
 if __name__ == "__main__":
