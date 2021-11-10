@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 """
 Pymodbus Server With Updating Thread
 --------------------------------------------------------------------------
@@ -42,6 +42,9 @@ log.setLevel(logging.DEBUG)
 mqtt_log = logging.getLogger("mqtt")
 mqtt_log.setLevel(logging.INFO)
 
+pymodbus_log = logging.getLogger('pymodbus')
+pymodbus_log.setLevel(logging.DEBUG)
+
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
     mqtt_log.info("Connected with result code "+str(rc))
@@ -54,7 +57,7 @@ def on_message(client, userdata, msg):
     mqtt_log.debug("received: " + msg.topic + " " + str(msg.payload))
     pass
 
-power = 0
+power = 100
 
 def on_set_power_message(client, userdata, msg: mqtt.MQTTMessage):
     mqtt_log.debug("received: " + msg.topic + " " + str(msg.payload))
@@ -116,7 +119,7 @@ def run_updating_server():
 
     store = ModbusSlaveContext(
         hr=ModbusSequentialDataBlock(1, tab_registers))
-    context = ModbusServerContext(slaves=store, single=True)
+    context = ModbusServerContext(slaves={ 60: store }, single=False)
 
     # ----------------------------------------------------------------------- #
     # initialize the server information
@@ -133,13 +136,13 @@ def run_updating_server():
     # run the server you want
     # ----------------------------------------------------------------------- #
     time = 1  # 5 seconds delay
-    loop = LoopingCall(f=updating_writer, a=(context,))
-    loop.start(time, now=False)  # initially delay by time
+    #loop = LoopingCall(f=updating_writer, a=(context,))
+    #loop.start(time, now=False)  # initially delay by time
 
     #StartTcpServer(context, identity=identity, address=("localhost", 5020))
 
     StartSerialServer(context, identity=identity,
-                      port='/dev/rs485', framer=ModbusRtuFramer, baudrate=19200)
+                      port='/dev/rs485', framer=ModbusRtuFramer, baudrate=19200, parity='E')
 
 
 if __name__ == "__main__":
